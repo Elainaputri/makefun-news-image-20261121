@@ -12,32 +12,40 @@ The graded entry is main.py, which only copies entry.png to /output.
 """
 
 import os
-import math
+from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 # ------------------------------------------------------------------ palette
-PAPER = (247, 244, 235)      # warm archival newsprint  #F7F4EB
-INK = (17, 19, 21)           # deep ink                #111315
+PAPER = (244, 241, 234)      # #F4F1EA
+INK = (26, 26, 26)           # #1A1A1A
 GRAY = (74, 72, 68)          # body grey
-LIGHT = (203, 197, 184)      # hairline rules          #CBC5B8
-CRIMSON = (185, 28, 28)      # editorial accent        #B91C1C
+LIGHT = (200, 194, 182)      # #C8C2B6
+CRIMSON = (139, 30, 30)      # #8B1E1E
 SLATE = (30, 58, 95)         # section navy            #1E3A5F
 
 REGION_COLORS = {
-    "MIDDLE EAST & SECURITY": (179, 65, 44),
-    "EUROPE & NATO": (30, 58, 95),
-    "CLIMATE & COP31": (31, 122, 90),
+    "MIDDLE EAST": (139, 30, 30),
+    "EUROPE & SECURITY": (30, 58, 95),
+    "GLOBAL & CLIMATE": (31, 100, 74),
     "AMERICAS": (200, 122, 30),
     "ASIA-PACIFIC": (107, 63, 160),
     "AFRICA": (168, 87, 27),
-    "MARKETS, TECH & SPACE": (11, 19, 43),
+    "SCIENCE, TECH & MARKETS": (11, 19, 43),
 }
 
 SS = 2
 W = H = 1024
 CW, CH = W * SS, H * SS
 
-FD = "/data/data/com.termux/files/usr/share/fonts/TTF/"
+FONT_ROOTS = (
+    Path("/usr/share/fonts/truetype/dejavu"),
+    Path("/data/data/com.termux/files/usr/share/fonts/TTF"),
+)
+FD = os.environ.get("DEJAVU_FONT_DIR") or str(next(
+    (root for root in FONT_ROOTS if (root / "DejaVuSansCondensed.ttf").is_file()),
+    FONT_ROOTS[0],
+))
+FD = FD.rstrip("/") + "/"
 SERIF_B = FD + "DejaVuSerif-Bold.ttf"
 SERIF = FD + "DejaVuSerif.ttf"
 SANS_B = FD + "DejaVuSans-Bold.ttf"
@@ -88,7 +96,17 @@ def ellipsize(d, s, f, maxw):
     return s.rstrip() + "…"
 
 
+text_boxes = []
+
+
 def draw_text(d, x, y, s, f, fill):
+    left, top, right, bottom = d.textbbox((x * SS, y * SS), s, font=f)
+    if not (0 <= left <= right <= CW and 0 <= top <= bottom <= CH):
+        raise ValueError(f"Text outside canvas: {s!r}")
+    for l, t, r, b, previous in text_boxes:
+        if max(left, l) < min(right, r) and max(top, t) < min(bottom, b):
+            raise ValueError(f"Text overlap: {s!r} and {previous!r}")
+    text_boxes.append((left, top, right, bottom, s))
     d.text((x * SS, y * SS), s, font=f, fill=fill)
 
 
@@ -105,103 +123,101 @@ def rect(d, x1, y1, x2, y2, fill=None, outline=None, w=1):
 
 
 # ------------------------------------------------------------------ content
-# (time, headline, summary). 36 stories over 7 regions.
+# (coverage date and optional UTC publication time, headline, summary).
 REGIONS = [
-    ("MIDDLE EAST & SECURITY", [
-        ("00:20", "Saudi air defences intercept three Houthi missiles over Riyadh",
-         "The third straight night of sirens in the Saudi capital."),
-        ("02:45", "Saudi-led coalition strikes Houthi drone workshops in Saada",
-         "Northern Yemen sites hit; no casualty count released."),
-        ("04:10", "IRGC says it downed a US MQ-9 Reaper over the Strait of Hormuz",
-         "The Pentagon does not confirm the claim."),
-        ("06:30", "Oil tanker damaged and ablaze off Khasab, Oman",
-         "Vessel hit while transiting Hormuz; the crew is safe."),
-        ("09:05", "Israeli drone strike kills seven in central Gaza",
-         "The raid tests the fragile ceasefire; mediators urge restraint."),
+    ("MIDDLE EAST", [
+        ("21 NOV • 05:15 UTC", "Saudi-led coalition says it intercepted three missiles targeting Riyadh",
+         "Authorities issued overnight alerts in the capital and south. (Times of Bangladesh)"),
+        ("20 NOV", "Saudi-led coalition reports strikes on Houthi-held sites",
+         "Targets included locations in Yemen's capital, Sanaa. (Times of Bangladesh)"),
+        ("21 NOV • 05:15 UTC", "IRGC claims it downed a US drone over Hormuz",
+         "Iranian state media reported the claim. (Times of Bangladesh)"),
+        ("20 NOV", "UN warns Yemen's Taiz food stocks meet only one-tenth of needs",
+         "Road closures cut food, medicine and water supplies by 90%. (UN)"),
+        ("20 NOV • 20:14 UTC", "Israeli drone strikes kill at least seven in central Gaza",
+         "Medical sources reported deaths in Bureij and Nuseirat. (Al Jazeera)"),
     ]),
-    ("EUROPE & NATO", [
-        ("01:15", "Russian Kh-101 missile crashes in eastern Poland",
-         "Debris found near Nowy Lipowiec; air-raid alerts issued."),
-        ("02:40", "Overnight strikes hit Kyiv's energy grid and a kindergarten",
-         "Among Russia's heaviest attacks of the year, officials say."),
-        ("05:00", "Zelensky brands Putin \"a killer\" after Trump's warm words",
-         "The rupture follows Trump calling Putin \"my friend\"."),
-        ("07:20", "NATO's Rutte to make emergency visit to Warsaw",
-         "Called over the Polish airspace breach, officials say."),
-        ("08:45", "Denmark expels Russia's defence attaché over a plot",
-         "Copenhagen links Moscow to a plan to kill rapper Kyivstoner."),
-        ("11:30", "Gen Z protests sweep 25 European nations",
-         "Rallies over living costs; a general strike paralyses Italy."),
+    ("EUROPE & SECURITY", [
+        ("20 NOV", "Poland says three Russian objects violated its airspace overnight",
+         "One missile came down near Nowy Lipowiec. (Reuters / AFP)"),
+        ("20 NOV", "Russian barrage hits Kyiv bridges and Ukraine's power grid",
+         "At least eight killed nationwide, officials say. (Reuters)"),
+        ("21 NOV • 06:14 UTC", "Zelensky calls Putin a killer after Trump calls him a friend",
+         "Ukraine's president made the remarks in a CNN interview. (Euronews)"),
+        ("21 NOV", "NATO chief Rutte due in Warsaw after airspace breach",
+         "Polish Prime Minister Donald Tusk announced the visit. (Reuters)"),
+        ("21 NOV • 01:12 UTC", "Denmark orders Russia's defence attaché to leave",
+         "Copenhagen alleges a plot to kill Ukrainian rapper Kyivstoner. (Al Jazeera)"),
+        ("20 NOV • 17:37 UTC", "Youth-led protests spread across more than 25 European countries",
+         "Italian unions called a 24-hour strike. (Euronews)"),
     ]),
-    ("CLIMATE & COP31", [
-        ("00:50", "COP31 in Antalya runs past its deadline into overtime",
-         "Some 200 nations remain deadlocked on the final text."),
-        ("03:30", "\"Fossil fuels\" scrubbed from the draft Antalya Accord",
-         "The EU warns the summit risks becoming a \"fossil summit\"."),
-        ("06:10", "Panama vows to formally object to the weak draft",
-         "Activists call it a possible \"worst COP ever\"."),
-        ("08:00", "Draft aims to lift electricity to 35% of energy by 2035",
-         "Up from about 21% today, in a push for electrification."),
-        ("10:40", "Loss-and-damage finance pushed to triple",
-         "An earlier draft cited $120bn a year for adaptation."),
+    ("GLOBAL & CLIMATE", [
+        ("21 NOV • 03:21 UTC", "COP31 negotiators in Antalya extend talks by one day",
+         "Delegates continue to seek consensus on a final deal. (Times of Bangladesh)"),
+        ("20 NOV • 22:00 UTC", "Draft climate text drops all references to fossil fuels",
+         "Environmental groups criticised the omission. (Times of Bangladesh)"),
+        ("20 NOV • 22:00 UTC", "Panama threatens a formal objection over the climate draft",
+         "The country called for a cap on oil production. (Times of Bangladesh)"),
+        ("20 NOV", "WFP plans to assist 91 million people in its 2027 global outlook",
+         "The agency says it needs just over $12bn for the plan. (UN/WFP)"),
+        ("20 NOV", "Education Cannot Wait commits $52m to 300,000 crisis-affected learners",
+         "Funding targets children in Lebanon, Myanmar and South Sudan. (UN Geneva)"),
     ]),
     ("AMERICAS", [
-        ("00:09", "M6.7 earthquake strikes central Peru near Carhuamayo",
-         "Depth 108 km, felt in Lima; no major damage reported."),
-        ("05:12", "M5.0 aftershock hits the same Junín region",
-         "About five hours after the mainshock; no new casualties."),
-        ("07:55", "Three Salvadoran soldiers killed in Haiti blast",
-         "The first deaths in El Salvador's Haiti deployment."),
-        ("09:20", "Trump defends ties with Putin at a White House briefing",
-         "Fresh from China, he takes questions on the war and markets."),
-        ("13:00", "Mamdani plans to close New York's Rikers Island by 2032",
-         "The mayor sets a deadline to shut the jail complex."),
+        ("20 NOV", "Magnitude 6.8 earthquake in Junin sends Lima residents from homes",
+         "GFZ reported the quake; Peru's institute placed its depth at 129km. (Reuters)"),
+        ("20 NOV", "Former Brazilian president Jair Bolsonaro is hospitalised with intestinal obstruction",
+         "He was taken to hospital after reporting abdominal pain. (Reuters)"),
+        ("20 NOV", "Three Salvadoran soldiers die after explosives accident in Haiti",
+         "A third soldier died after being taken to hospital. (The Haitian Times)"),
+        ("21 NOV", "Trump praises ties with Xi and Putin amid domestic political pressure",
+         "He praised his ties to both Putin and Xi after the Shenzhen meeting. (Euronews)"),
+        ("20 NOV", "US judge rejects Trump administration's changes to homelessness programme",
+         "The ruling blocks the proposed overhaul. (Reuters)"),
     ]),
     ("ASIA-PACIFIC", [
-        ("01:30", "Asia-Pacific stocks log their worst week since 2020",
-         "Nikkei −4.5% and Kospi −5.0% as the tech rout deepens."),
-        ("04:55", "ICJ finds Myanmar guilty of genocide against the Rohingya",
-         "A first-ever ruling in The Gambia v. Myanmar case."),
-        ("06:45", "South Korea catches 111 students cheating at the Suneung",
-         "Banned smart devices found during the high-stakes exam."),
-        ("09:10", "Nepal's PM Balendra Shah makes his first visit to India",
-         "Trade and connectivity top the agenda with New Delhi."),
-        ("11:50", "BepiColombo begins science operations at Mercury",
-         "The ESA and JAXA orbiter starts its survey of the planet."),
+        ("20 NOV", "Japan's Nikkei falls 5.06% as tech stocks slide worldwide",
+         "Technology shares led a wider global market rout. (Reuters)"),
+        ("20 NOV", "Myanmar expresses disappointment over Rohingya genocide judgment",
+         "The World Court issued its ruling on Thursday. (Reuters)"),
+        ("20 NOV", "SK Hynix set to become top shareholder in Japan's Kioxia",
+         "A December bond conversion would give it an indirect 14.1% stake. (Reuters)"),
+        ("21 NOV", "South Korea's president urges speed in AI race on data-centre visit",
+         "Lee highlighted the need to move quickly. (Reuters)"),
+        ("20 NOV", "Mongolia's president resigns, setting up an early election",
+         "President Ukhnaa Khurelsukh's departure opens a race to replace him. (Reuters)"),
     ]),
     ("AFRICA", [
-        ("02:20", "UN: 2,230+ civilians killed in Sudan this year",
-         "Some 1,630 died in drone strikes, many in Kordofan."),
-        ("05:40", "Mali and Africa Corps strike a camp near Tinessako",
-         "A Su-24 raid in the Kidal region, local sources say."),
-        ("08:30", "Nearly 600 women killed in South Africa in three months",
-         "Police data prompt calls for stronger protection."),
-        ("12:15", "Phumzile Mlambo-Ngcuka, ex-UN Women chief, dies at 71",
-         "South Africa's former deputy president led UN Women."),
+        ("20 NOV • 00:10 UTC", "Four bodies recovered after a migrant boat capsizes off Senegal",
+         "Search teams continued looking for survivors. (Al Jazeera)"),
+        ("21 NOV", "Phumzile Mlambo-Ngcuka, South Africa's first female deputy president, dies at 71",
+         "She later led UN Women as its executive director. (Reuters)"),
+        ("20 NOV", "UN warns 76,000 displaced people in Congo site face rising threats",
+         "Plaine Savo residents have only five litres of water per person daily. (UN)"),
+        ("21 NOV • 03:14 UTC", "Passenger boat capsizes in southern Nigeria's Bayelsa state",
+         "Local reports described an overcrowded boat. (Times of Bangladesh)"),
     ]),
-    ("MARKETS, TECH & SPACE", [
-        ("13:30", "S&P 500 −3.70% to 6,910 as AI fears grip Wall Street",
-         "The index closes in correction; Dow −1.93% to 48,147."),
-        ("13:35", "Nasdaq plunges 5.28% to 22,617; VIX jumps 26%",
-         "Nvidia falls 11% in a broad rout of technology shares."),
-        ("14:00", "Anthropic shares slide a day after its record IPO",
-         "The stock falls 8–12% after an $81.3bn listing near $1.41tn."),
-        ("14:20", "Bitcoin falls below $59,000, down 23% in November",
-         "Its worst month since June 2022 as investors flee risk."),
-        ("15:00", "Gold drops 4% to about $3,539 as traders seek cash",
-         "A safe-haven selloff alongside the equity slide."),
-        ("15:30", "Claimed Claude-assisted proof of the Riemann Hypothesis",
-         "Anthropic's Levent Alpöge releases it; verification pending."),
+    ("SCIENCE, TECH & MARKETS", [
+        ("20 NOV", "S&P 500 falls 3.70% to 6,910.39 as AI shares lead Wall Street rout",
+         "The index records a seventh consecutive decline. (Reuters/AP)"),
+        ("20 NOV", "Nasdaq drops 5.28% to 22,617.73 in its worst week since 2020",
+         "The tech-heavy index loses about 10% over five sessions. (Reuters/AP)"),
+        ("20 NOV", "Anthropic shares stumble the day after their stock market debut",
+         "The listing raised a record $81.3bn. (Reuters)"),
+        ("20 NOV", "Bitcoin slips below $60,000 during a broader selloff",
+         "The cryptocurrency fell through the closely watched threshold. (Reuters)"),
+        ("20 NOV", "US markets regulator proposes taking control of Wall Street tracking system",
+         "The SEC proposal has a 60-day public comment window. (Reuters)"),
+        ("21 NOV", "BepiColombo is scheduled to enter orbit around Mercury",
+         "The two ESA and JAXA orbiters are still attached for arrival. (ESA)"),
     ]),
 ]
+if [len(items) for _, items in REGIONS] != [5, 6, 5, 5, 5, 4, 6]:
+    raise ValueError("Unexpected story counts")
 
 LEADS = [
-    ("CLIMATE", "COP31 runs into overtime deadlock over fossil fuels",
-     "Some 200 nations miss the Antalya deadline as the draft drops any mention of coal, oil and gas.", (31, 122, 90)),
-    ("EUROPE", "Riyadh intercepts missiles as Kyiv burns",
-     "Houthi salvos target Saudi Arabia for a third night; Russian strikes pound Ukraine's grid.", (179, 65, 44)),
-    ("WORLD", "Peru quake shakes Lima; BepiColombo reaches Mercury",
-     "A M6.7 tremor hits central Peru at dawn; Europe's orbiter begins science at the planet.", (200, 122, 30)),
+    ("GLOBAL LEAD", "COP31 talks extend after fossil-fuel language disappears",
+     "UN negotiators in Antalya add a day to seek consensus after a draft omits coal, oil and gas.", (31, 100, 74)),
 ]
 
 # ------------------------------------------------------------------ canvas
@@ -216,7 +232,7 @@ rect(d, M, 14, W - M, H - 14, outline=INK, w=1)
 
 # ---- masthead -------------------------------------------------------------
 f_mast = font(SERIF_B, 43)
-mt = "THE GLOBAL DISPATCH"
+mt = "THE WORLD DISPATCH"
 mw = tw(d, mt, f_mast)
 draw_text(d, (W - mw) / 2, 20, mt, f_mast, INK)
 
@@ -229,7 +245,7 @@ draw_text(d, inner_r - 6 - tw(d, fl, f_flank), 26, fl, f_flank, SLATE)
 band_y = 70
 rect(d, M, band_y, W - M, band_y + 20, fill=SLATE)
 f_sub = font(SC_B, 10)
-sub = "SATURDAY, 21 NOVEMBER 2026   ·   36 DATED STORIES   ·   7 REGIONS   ·   UTC EDITION"
+sub = "SATURDAY, NOVEMBER 21, 2026 • WORLD EDITION • 36 VERIFIED REPORTS"
 sw = tw(d, sub, f_sub)
 draw_text(d, (W - sw) / 2, band_y + 5, sub, f_sub, PAPER)
 
@@ -240,21 +256,25 @@ gap = 9
 hw = (W - 2 * M - 2 * gap) / 3
 
 for i, (tag, head, summ, col) in enumerate(LEADS):
-    x = M + i * (hw + gap)
-    rect(d, x, hy0, x + hw, hy0 + hero_h, outline=LIGHT, w=1)
+    # The final page uses one dominant lead rather than three competing heroes.
+    x = M if len(LEADS) == 1 else M + i * (hw + gap)
+    card_w = W - 2 * M if len(LEADS) == 1 else hw
+    rect(d, x, hy0, x + card_w, hy0 + hero_h, outline=LIGHT, w=1)
     # colour tab
-    rect(d, x, hy0, x + hw, hy0 + 3, fill=col)
+    rect(d, x, hy0, x + card_w, hy0 + 3, fill=col)
     f_hl = font(SC_B, 9)
     draw_text(d, x + 7, hy0 + 8, tag, f_hl, col)
     f_hh = font(SERIF_B, 15)
     y = hy0 + 21
-    for ln in wrap(d, head, f_hh, hw - 14)[:3]:
+    for ln in wrap(d, head, f_hh, card_w - 14):
         draw_text(d, x + 7, y, ln, f_hh, INK)
         y += line_h(f_hh) * 0.98
     f_hs = font(SC, 8.5)
-    for ln in wrap(d, summ, f_hs, hw - 14)[:3]:
+    for ln in wrap(d, summ, f_hs, card_w - 14):
         draw_text(d, x + 7, y + 1, ln, f_hs, GRAY)
         y += line_h(f_hs)
+    if y > hy0 + hero_h - 4:
+        raise ValueError(f"Lead card overflow: {tag}")
 
 # ---- region grid ----------------------------------------------------------
 GTOP = hy0 + hero_h + 10   # 224
@@ -284,7 +304,7 @@ def render_card(x, y, w, h, title, stories):
 
     # find the largest scale (grow or shrink) that still fits, summaries if they fit
     chosen = None
-    for with_sum in (True, False):
+    for with_sum in (True,):
         best = None
         for step in range(26, 7, -1):          # scale 1.30 -> 0.80
             scale = step / 20.0
@@ -294,11 +314,11 @@ def render_card(x, y, w, h, title, stories):
             lh_t, lh_h, lh_s = line_h(f_time), line_h(f_head), line_h(f_sum)
             blocks, total = [], 0
             for (tm, hd, sm) in stories:
-                hl = wrap(d, hd, f_head, innerw)[:2]
+                hl = wrap(d, hd, f_head, innerw)
                 lines = lh_t + len(hl) * lh_h
                 sl = []
                 if with_sum:
-                    sl = wrap(d, sm, f_sum, innerw)[:2]
+                    sl = wrap(d, sm, f_sum, innerw)
                     lines += len(sl) * lh_s
                 blocks.append((hl, sl))
                 total += lines
@@ -309,13 +329,8 @@ def render_card(x, y, w, h, title, stories):
         if best:
             chosen = best
             break
-    if chosen is None:                          # extreme fallback: smallest, no summary
-        scale = 0.8
-        f_time = font(SC_B, 7.5 * scale); f_head = font(SC_B, 10.5 * scale)
-        f_sum = font(SC, 8.2 * scale)
-        lh_t, lh_h, lh_s = line_h(f_time), line_h(f_head), line_h(f_sum)
-        blocks = [(wrap(d, hd, f_head, innerw)[:2], []) for (tm, hd, sm) in stories]
-        chosen = (scale, False, blocks, f_time, f_head, f_sum, lh_t, lh_h, lh_s)
+    if chosen is None:
+        raise ValueError(f"Regional card overflow: {title}")
 
     _s, with_sum, blocks, f_time, f_head, f_sum, lh_t, lh_h, lh_s = chosen
     cy = top
@@ -371,18 +386,18 @@ def col_plan(subset, cw, scale, with_sum):
     lh_t, lh_h, lh_s = line_h(f_time), line_h(f_head), line_h(f_sum)
     blocks, total = [], 0
     for (tm, hd, sm) in subset:
-        hl = wrap(d, hd, f_head, cw)[:2]
+        hl = wrap(d, hd, f_head, cw)
         lines = lh_t + len(hl) * lh_h
         sl = []
         if with_sum:
-            sl = wrap(d, sm, f_sum, cw)[:2]
+            sl = wrap(d, sm, f_sum, cw)
             lines += len(sl) * lh_s
         blocks.append((hl, sl))
         total += lines
     return total + (len(subset) - 1) * 8, (f_time, f_head, f_sum, lh_t, lh_h, lh_s, blocks)
 
 bestC = None
-for with_sum in (True, False):
+for with_sum in (True,):
     for step in range(30, 11, -1):
         scale = step / 20.0
         ok = True
@@ -400,7 +415,7 @@ for with_sum in (True, False):
     if bestC:
         break
 if bestC is None:
-    bestC = (0.6, False, None)
+    raise ValueError("Markets card overflow")
 
 scaleC, with_sumC, _ = bestC
 for ci in range(3):
@@ -428,8 +443,7 @@ for ci in range(3):
 ft_y = rowC_y + ROW_C_H + 8   # ~ 990
 hline(d, M + 6, ft_y, W - M - 6, 2, INK)
 f_tick = font(SC_B, 8.6)
-tick = ("S&P 500 −3.70%   ·   NASDAQ −5.28%   ·   BTC $58,140   ·   BRENT $74.20   ·   "
-        "COP31 +18H OVERTIME   ·   BEPICOLOMBO AT MERCURY   ·   COMPILED 21 NOV 2026")
+tick = "MARKETS & DATA   ·   S&P 500 6,910.39 (−3.70%)   ·   BTC $56,813.68 (−3.57%)   ·   BRENT CFD $92.57   ·   GOLD $3,535"
 # shrink to fit one line
 fs = 8.6
 while tw(d, tick, font(SC_B, fs)) > (W - 2 * M - 12) and fs > 5:
@@ -440,4 +454,7 @@ draw_text(d, (W - tw(d, tick, f_tick)) / 2, ft_y + 4, tick, f_tick, SLATE)
 # ------------------------------------------------------------------ save
 out = img.resize((W, H), Image.LANCZOS)
 out.save("entry.png", format="PNG", optimize=True)
-print("wrote entry.png", out.size, os.path.getsize("entry.png"), "bytes")
+out.save("news_digest_20261121.png", format="PNG", optimize=True)
+out.save("news-20261121.png", format="PNG", optimize=True)
+out.save("news-20261121.webp", format="WEBP", quality=92, method=6)
+print("wrote entry.png, news-20261121.png, news-20261121.webp", out.size, os.path.getsize("entry.png"), "bytes")
